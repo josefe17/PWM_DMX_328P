@@ -20,7 +20,7 @@
 #define DDRC_MASK 0b00111111
 #define DDRD_MASK 0b00010110
 
-#define PINC_MASK 0b00111111
+#define PINC_MASK	0b00111111
 #define PIND_MASK_L 0b00000110
 #define PIND_MASK_H 0b00010000
 
@@ -222,7 +222,7 @@ unsigned char attach_bit (volatile unsigned char* input_value, unsigned char inp
 
 int read_address (void)
 {	
-	return  (((~PINC) & PINC_MASK) | (((~PIND) & PIND_MASK_L)<<6) | ((((~PIND) & PIND_MASK_H)>>PIND4)<<8));
+	return  ((((~PINC) & PINC_MASK) | (((~PIND) & PIND_MASK_L)<<5)) + (((~PIND) & PIND_MASK_H)>>PIND4)*256);
 }
 
 unsigned char check_shapping(void)
