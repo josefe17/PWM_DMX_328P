@@ -1,33 +1,68 @@
 /*
- * PWM_DMX.c
+ * Atmega 328P 6ch DMX to PWM converter @ 78,125 KHz
+ *
+ * Fuses: -U lfuse:w:0xF7:m -U hfuse:w:0xD6:m -U efuse:w:0x05:m -U lock:w:0x3F:m
+ *
+ * Pinout:
+ * Pin 1: Reset
+ * Pin 2: DMX in
+ * Pin 3: 7th address bit
+ * Pin 4: 8th address bit
+ * Pin 5: PWM 5 output
+ * Pin 6: 9th address bit
+ * Pin 7: VCC
+ * Pin 8: GND
+ * Pins 9-10: 20 MHz Crystal resonator
+ * Pin 11: PWM 1 output
+ * Pin 12: PWM 0 output
+ * Pin 13: Free
+ * Pin 14: Shapping mode bit
+ * Pin 15: PWM 2 output
+ * Pin 16: PWM 3 output
+ * Pin 17: PWM 4 output / MOSI
+ * Pin 18: MISO
+ * Pin 19: SCK
+ * Pin 20-21: Not used
+ * Pin 22: GND
+ * Pin 23: 1st address bit
+ * Pin 24: 2nd address bit
+ * Pin 25: 3rd address bit
+ * Pin 26: 4th address bit
+ * Pin 27: 5th address bit
+ * Pin 28: 6th address bit
+ *
  *
  * Created: 18/09/2016 16:59:18
  * Author : josefe
+ *
  */ 
 
 #ifndef DMX_MAX_CHANNELS
-#define DMX_MAX_CHANNELS 512
+#define DMX_MAX_CHANNELS 512		//Max DMX channels
 #endif
 
 #define F_CPU 20000000
 
-#define ANALOG_CHANNELS 6
-#define TIMEOUT_TRESHOLD 78125
+#define ANALOG_CHANNELS 6			//Nº of analog channels to use
+#define TIMEOUT_TRESHOLD 78125		//Fcpu / Timer count (256)
 
 #define OFF 0
 #define ON 1
 
-#define DDRC_MASK 0b00111111
+/*Data direction mask*/
+#define DDRC_MASK 0b00111111		
 #define DDRD_MASK 0b00010110
 
+/*Input reading pin masks*/
 #define PINC_MASK	0b00111111
 #define PIND_MASK_L 0b00000110
 #define PIND_MASK_H 0b00010000
 
+/*DC PWM registers (not used)*/
 #define PWM0_VALUE OCR0A
 #define PWM1_VALUE OCR0B
-#define PWM2_VALUE OCR1A
-#define PWM3_VALUE OCR1B
+#define PWM2_VALUE OCR1AL
+#define PWM3_VALUE OCR1BL
 #define PWM4_VALUE OCR2A
 #define PWM5_VALUE OCR2B
 
@@ -38,7 +73,7 @@
 #include "dmx_basic.h"
 
 /*Prototypes*/
-
+/*Custom function to copy one bit from a register to another*/
 unsigned char attach_bit(volatile unsigned char*, unsigned char, volatile unsigned char* , unsigned char);
 void port_init(void);
 void timer0_interrupts_init();
@@ -46,12 +81,16 @@ void timer0_as_pwm_init(void);
 void timer1_as_pwm_init(void);
 void timer2_as_pwm_init(void);
 
+/*Reads DMX address from input pins*/
 int read_address (void);
+/*Checks if output shaping is enabled*/
 unsigned char check_shapping(void);
+/*Updates PWM addresses*/
 void fire_pwm(void);
+/*Initialises data buffer*/
 void clear_buffer(volatile unsigned char*, int);
 
-/*Data values for output shapping*/
+/*Data values for output shaping*/
 /*AC linear dimming curve*/
 const unsigned char shape[] = 
 { 
@@ -93,35 +132,37 @@ const unsigned char shape[] =
 };
 */
 
-volatile unsigned char* pwm_addresses[]={&OCR0A, &OCR0B, &OCR1AL, &OCR1BL, &OCR2A, &OCR2B};
-unsigned char FSM_status;
+
+volatile unsigned char* pwm_addresses[]={&OCR0A, &OCR0B, &OCR1AL, &OCR1BL, &OCR2A, &OCR2B}; //PWM DC registers addresses
+unsigned char FSM_status; //DMX RX status
 volatile unsigned char data_valid;
 volatile unsigned long timeout;
 int address;
 unsigned char shapping;
-int RX_index;
+int RX_index; //Index for DMX data receiving
 volatile unsigned char data_buffer [ANALOG_CHANNELS]={0};
 	
 	
 ISR(USART_RX_vect)
 {	
 	dmx_interrupt(&FSM_status, address, ANALOG_CHANNELS, &RX_index);
-	timeout=0;	
+	timeout=0;	//Resets timer when USART ISR is fired. If not, timer overflows and invalidate frames
+				//Better enable both simultaneous interrupts with sei() before DMX_interrupt();
 }
 
-ISR(TIMER0_OVF_vect)
+ISR(TIMER0_OVF_vect)	//Can be optimized					
 {	
-	if  (data_valid==FRAME_VALID)
+	if  (data_valid==FRAME_VALID)					//If data is valid
 	{		
-		if (timeout<TIMEOUT_TRESHOLD && timeout>=0)
+		if (timeout<TIMEOUT_TRESHOLD && timeout>=0) 
 		{
-			timeout++;
+			timeout++;								//Increments timer
 			data_valid=FRAME_VALID;
 		}
 		else
 		{
-			timeout=0;
-			data_valid=FRAME_DEPRECATED;
+			timeout=0;								//If overflows
+			data_valid=FRAME_DEPRECATED;			//Invalidate frame
 		}				
 	}		
 }
@@ -141,6 +182,7 @@ int main (void)
 	set_timeout_pointer(&timeout);
 	set_valid_frame_flag_pointer(&data_valid);
 	
+	/*Initializes Hardware*/
 	port_init();
 	timer0_interrupts_init();
 	timer0_as_pwm_init();
@@ -178,12 +220,12 @@ void port_init()
 	
 void timer0_interrupts_init()
 {
-	TIMSK0|=(1<<TOIE0);
+	TIMSK0|=(1<<TOIE0);	//Enables timer overflown interrupt
 }
 
 void timer0_as_pwm_init()
 {
-	DDRD|=0b01100000;		//Set pins as outputs 
+	DDRD|=0b01100000;		//Sets pins as outputs 
 	TCNT0=0;				//Clears counter
 	OCR0A=0;
 	OCR0B=0;
@@ -193,7 +235,7 @@ void timer0_as_pwm_init()
 
 void timer1_as_pwm_init()
 {
-	DDRB|=0b00000110;		//Set pins as outputs
+	DDRB|=0b00000110;		//Sets pins as outputs
 	TCNT1= 0;				//Clears counter
 	OCR1A=0;
 	OCR1B=0;
@@ -205,7 +247,7 @@ void timer1_as_pwm_init()
 
 void timer2_as_pwm_init(void)
 {
-	DDRB|= 0b00000001;		//Set pins as outputs
+	DDRB|= 0b00000001;		//Sets pins as outputs
 	DDRD|= 0b00001000;
 	TCNT2=0;				//Clears counter
 	OCR2A=0;
@@ -220,7 +262,7 @@ unsigned char attach_bit (volatile unsigned char* input_value, unsigned char inp
 	return (*output_value);
 }
 
-int read_address (void)
+int read_address (void)	//Polling reading
 {	
 	return  ((((~PINC) & PINC_MASK) | (((~PIND) & PIND_MASK_L)<<5)) + (((~PIND) & PIND_MASK_H)>>PIND4)*256);
 }
@@ -234,19 +276,19 @@ void fire_pwm(void)
 {
 	unsigned char i;
 	
-	for (i=0; i<ANALOG_CHANNELS; i++)
+	for (i=0; i<ANALOG_CHANNELS; i++)	// For each channel					
 	{
-		if (data_valid==FRAME_DEPRECATED || address>=(DMX_MAX_CHANNELS-i))
+		if (data_valid==FRAME_DEPRECATED || address>=(DMX_MAX_CHANNELS-i)) // If data or address aren't valid
 		{
-			*(pwm_addresses[i])=0;
+			*(pwm_addresses[i])=0; // Output is set to 0
 		}
-		else if (shapping)
+		else if (shapping)	// Else if shaping is enabled	
 		{
-			*(pwm_addresses[i])=shape[data_buffer[i]];
+			*(pwm_addresses[i])=shape[data_buffer[i]]; // Shapes value to output
 		}
 		else
 		{
-			*(pwm_addresses[i])=data_buffer[i];
+			*(pwm_addresses[i])=data_buffer[i];			// Passes value to output straight away
 		}
 	}
 }
