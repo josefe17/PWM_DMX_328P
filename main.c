@@ -133,7 +133,7 @@ const unsigned char shape[] =
 */
 
 
-volatile unsigned char* pwm_addresses[]={&OCR0A, &OCR0B, &OCR1AL, &OCR1BL, &OCR2A, &OCR2B}; //PWM DC registers addresses
+volatile unsigned char* pwm_addresses[]={&OCR0A, &OCR0B, &OCR1AL, &OCR1BL, &OCR2B, &OCR2A}; //PWM DC registers addresses
 unsigned char FSM_status; //DMX RX status
 volatile unsigned char data_valid;
 volatile unsigned long timeout;
@@ -146,8 +146,7 @@ volatile unsigned char data_buffer [ANALOG_CHANNELS]={0};
 ISR(USART_RX_vect)
 {	
 	dmx_interrupt(&FSM_status, address, ANALOG_CHANNELS, &RX_index);
-	timeout=0;	//Resets timer when USART ISR is fired. If not, timer overflows and invalidate frames
-				//Better enable both simultaneous interrupts with sei() before DMX_interrupt();
+	timeout=0;	//Resets timer when USART ISR is fired. If not, timer overflows and invalidate frames				
 }
 
 ISR(TIMER0_OVF_vect)	//Can be optimized					
