@@ -246,7 +246,7 @@ void timer1_as_pwm_init()
 
 void timer2_as_pwm_init(void)
 {
-	DDRB|= 0b00000001;		//Sets pins as outputs
+	DDRB|= 0b00001000;		//Sets pins as outputs
 	DDRD|= 0b00001000;
 	TCNT2=0;				//Clears counter
 	OCR2A=0;
